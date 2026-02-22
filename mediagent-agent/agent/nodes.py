@@ -31,14 +31,14 @@ from agent.state import AgentState
 # llm_chat: genera respuestas conversacionales — Haiku es más que suficiente
 # y entre 3-5x más rápido que Sonnet para estas tareas
 llm_chat = ChatAnthropic(
-    model="claude-3-haiku-20240307",
+    model="claude-haiku-4-5-20251001",
     temperature=0.3,
     max_tokens=512,
 )
 
 # llm_parse: solo extrae un número o sí/no — max_tokens mínimo = máxima velocidad
 llm_parse = ChatAnthropic(
-    model="claude-3-haiku-20240307",
+    model="claude-haiku-4-5-20251001",
     temperature=0,
     max_tokens=5,
 )
