@@ -26,6 +26,7 @@ from agent.tools import (
     crear_cita,
 )
 from agent.state import AgentState
+from agent.email_service import enviar_correo_confirmacion
 
 # ── LLMs ──────────────────────────────────────────────────────────────────────
 # llm_chat: genera respuestas conversacionales — Haiku es más que suficiente
@@ -798,6 +799,25 @@ def nodo_agendar(state: AgentState) -> dict:
         horario_id=horario["id"],
     )
 
+    # ── Enviar correo de confirmación ──
+    email_result = enviar_correo_confirmacion(
+        paciente=paciente,
+        doctor=doctor,
+        sede=sede,
+        horario=horario,
+        especialidad=especialidad,
+        fecha_fmt=fecha_fmt,
+        cita_id=cita["id"],
+    )
+
+    if email_result["success"]:
+        email_texto = f"📧 Se ha enviado un correo de confirmación a **{paciente['correo']}**."
+    else:
+        email_texto = (
+            f"📧 No se pudo enviar el correo de confirmación a {paciente['correo']}.\n"
+            f"   _({email_result['message']})_"
+        )
+
     msg = f"""✅ ¡Tu cita ha sido confirmada exitosamente!
 
 📌 **Número de cita:** {cita['id']}
@@ -805,7 +825,7 @@ def nodo_agendar(state: AgentState) -> dict:
 👨‍⚕️ Dr(a). {doctor['nombres']} {doctor['apellidos']}
 📅 {fecha_fmt} de {horario['hora_inicio']} a {horario['hora_fin']}
 
-📧 Te enviaremos un correo de confirmación a {paciente['correo']}.
+{email_texto}
 
 Recuerda llegar 15 minutos antes de tu cita. ¿Hay algo más en lo que pueda ayudarte? 😊"""
 

@@ -6061,7 +6061,7 @@
     "fecha": "2026-02-23",
     "hora_inicio": "09:00",
     "hora_fin": "10:00",
-    "estado": "disponible"
+    "estado": "ocupado"
   },
   {
     "id": "hor-00759",
@@ -6085,7 +6085,7 @@
     "fecha": "2026-02-23",
     "hora_inicio": "12:00",
     "hora_fin": "13:00",
-    "estado": "disponible"
+    "estado": "ocupado"
   },
   {
     "id": "hor-00762",

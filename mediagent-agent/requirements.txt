@@ -2,3 +2,4 @@ langchain>=0.3.0
 langgraph>=0.2.50
 langchain-anthropic>=0.3.0
 python-dotenv>=1.0.0
+resend>=2.0.0

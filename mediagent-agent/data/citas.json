@@ -6,5 +6,21 @@
     "sede_id": "sede-002",
     "horario_id": "hor-00757",
     "estado": "confirmada"
+  },
+  {
+    "id": "cita-2943e1d7",
+    "paciente_id": "pac-001",
+    "doctor_id": "doc-007",
+    "sede_id": "sede-002",
+    "horario_id": "hor-00758",
+    "estado": "confirmada"
+  },
+  {
+    "id": "cita-2d7fd678",
+    "paciente_id": "pac-001",
+    "doctor_id": "doc-007",
+    "sede_id": "sede-002",
+    "horario_id": "hor-00761",
+    "estado": "confirmada"
   }
 ]
