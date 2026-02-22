@@ -124,6 +124,85 @@ def _formatear_doctores(doctores_hrs: list) -> tuple:
     return texto, opciones_flat
 
 
+def _detectar_seleccion(user_input: str, doctores_hrs: list) -> dict:
+    """
+    Analiza la respuesta del usuario y determina qué információn entrego.
+    Cases:
+      'completo'      -> doctor + día + hora
+      'doctor_y_dia'  -> doctor + día, sin hora
+      'solo_doctor'   -> solo mencionó al doctor
+      'solo_dia'      -> solo mencionó un día
+      'desconocido'   -> no se detectó nada claro
+    """
+    import re
+    txt = user_input.lower()
+
+    # 1. Detectar doctor (por apellido o primer nombre)
+    doctor_dh = None
+    for dh in doctores_hrs:
+        apellido = dh["doctor"]["apellidos"].split()[0].lower()
+        nombres = [w.lower() for w in dh["doctor"]["nombres"].split() if len(w) > 3]
+        if apellido in txt or any(n in txt for n in nombres):
+            doctor_dh = dh
+            break
+
+    # 2. Detectar fecha (por nombre del día o número del día)
+    todas_fechas = sorted({h["fecha"] for dh in doctores_hrs for h in dh["horarios"]})
+    fecha_detectada = None
+    for fecha in todas_fechas:
+        nombre_dia = _format_fecha(fecha).lower()  # "lunes 23 de febrero"
+        partes = nombre_dia.split()
+        if any(p in txt for p in partes if len(p) > 3):
+            fecha_detectada = fecha
+            break
+        if partes[0] in txt:  # nombre corto del día: "lunes", "martes"...
+            fecha_detectada = fecha
+            break
+
+    # 3. Detectar hora (patrones numéricos tipo 8, 08, 8:00, 09:00)
+    horario_detectado = None
+    hora_matches = re.findall(r'\b(\d{1,2})(?::(\d{2}))?\b', txt)
+    horas_candidatas = []
+    for h, m in hora_matches:
+        hora_n = int(h)
+        if 7 <= hora_n <= 18:
+            horas_candidatas.append(f"{hora_n:02d}:{m if m else '00'}")
+
+    if horas_candidatas:
+        candidatos = doctor_dh["horarios"] if doctor_dh else [h for dh in doctores_hrs for h in dh["horarios"]]
+        if fecha_detectada:
+            candidatos = [h for h in candidatos if h["fecha"] == fecha_detectada]
+        for h in candidatos:
+            if h["hora_inicio"] in horas_candidatas:
+                horario_detectado = h
+                if not doctor_dh:
+                    for dh in doctores_hrs:
+                        if any(x["id"] == h["id"] for x in dh["horarios"]):
+                            doctor_dh = dh
+                            break
+                break
+
+    # 4. Determinar tipo
+    if doctor_dh and fecha_detectada and horario_detectado:
+        tipo = "completo"
+    elif doctor_dh and fecha_detectada:
+        tipo = "doctor_y_dia"
+    elif doctor_dh:
+        tipo = "solo_doctor"
+    elif fecha_detectada:
+        tipo = "solo_dia"
+    else:
+        tipo = "desconocido"
+
+    return {
+        "tipo": tipo,
+        "doctor_dh": doctor_dh,
+        "doctor": doctor_dh["doctor"] if doctor_dh else None,
+        "fecha": fecha_detectada,
+        "horario": horario_detectado,
+    }
+
+
 def _parsear_sede(user_input: str, sedes: list) -> dict | None:
     """
     Intenta identificar la sede elegida.
@@ -225,9 +304,17 @@ def nodo_clasificar_y_sedes(state: AgentState) -> dict:
             "sedes_disponibles": [],
         }
 
-    # Formatear opciones
+    # Determinar sede recomendada (la del propio distrito del paciente primero, si no la primera)
+    sede_recomendada = sedes[0]
+    for s in sedes:
+        if s["distrito"] == distrito:
+            sede_recomendada = s
+            break
+
+    # Formatear opciones destacando la recomendada con ⭐
     opciones_texto = "\n".join([
         f"  {i+1}. 🏥 {s['nombre']} — {s['direccion']} ({s['distrito']})"
+        + (" ⭐ *Recomendada*" if s["id"] == sede_recomendada["id"] else "")
         for i, s in enumerate(sedes)
     ])
 
@@ -237,13 +324,16 @@ Su mensaje fue: "{state['messages'][-1].content}"
 Las sedes disponibles (con doctores y horarios confirmados) son:
 {opciones_texto}
 
+La sede MÁS RECOMENDADA por cercanía a {distrito} es: {sede_recomendada['nombre']}.
+
 Genera una respuesta amigable que:
 1. Salude al paciente por su nombre
 2. Confirme que necesita {especialidad}
-3. Muestre las sedes numeradas exactamente como se las paso
-4. Pregunte cuál prefiere
+3. Muestre las sedes numeradas exactamente como se las paso, con el ⭐ en la recomendada
+4. Destaque brevemente por qué esa sede es la más conveniente
+5. Pregunte cuál prefiere
 
-IMPORTANTE: Muestra las sedes exactamente como están arriba, con sus números."""
+IMPORTANTE: Muestra las sedes exactamente como están arriba, con sus números y el ⭐."""
 
     response = llm_chat.invoke([
         SystemMessage(content=SYSTEM_PROMPT),
@@ -488,76 +578,130 @@ IMPORTANTE: Muestra los doctores y horarios exactamente como están arriba."""
         messages_extra += [AIMessage(content=agent_msg_sig), HumanMessage(content=user_choice)]
         doctores_para_mostrar = doctores_semana_sig
 
-    # ── Parsear selección de doctor + horario ──
-    opciones_texto = "\n".join([
-        f"{o['numero']}. Dr(a). {o['doctor']['apellidos']} - {o['horario']['fecha']} {o['horario']['hora_inicio']}"
-        for o in opciones_flat
-    ])
-    num = _parsear_opcion_numero(user_choice, len(opciones_flat), opciones_texto)
+    # ════════════════════════════════════════════════
+    # PARSEAR SELECCIÓN: 4 casos según lo que dijo el usuario
+    # ════════════════════════════════════════════════
+    sel = _detectar_seleccion(user_choice, doctores_para_mostrar)
 
     doctor_elegido = None
     horario_elegido = None
 
-    if num:
-        for o in opciones_flat:
-            if o["numero"] == num:
-                doctor_elegido = o["doctor"]
-                horario_elegido = o["horario"]
-                break
+    def _pedir_hora(doc_dict: dict, hors: list) -> dict:
+        """Helper: interrupt para pedir hora específica."""
+        nonlocal messages_extra
+        horas_txt = "\n".join([
+            f"  {i+1}. \U0001f550 {h['hora_inicio']} - {h['hora_fin']}"
+            for i, h in enumerate(hors)
+        ])
+        msg = (
+            f"\U0001f4c5 Dr(a). {doc_dict['nombres']} {doc_dict['apellidos']}\n"
+            f"Horas disponibles ese día:\n\n{horas_txt}\n\n"
+            f"¿A qué hora prefieres tu cita? \U0001f550"
+        )
+        resp = interrupt({"message": msg, "type": "elegir_hora", "horas": hors})
+        messages_extra += [AIMessage(content=msg), HumanMessage(content=resp)]
+        n = _parsear_opcion_numero(resp, len(hors), "\n".join([f"{i+1}. {h['hora_inicio']}" for i, h in enumerate(hors)]))
+        return hors[n - 1] if n else hors[0]
 
-    # ── Si no hubo hora específica: detectar doctor+día y preguntar hora ──
-    if not horario_elegido:
-        doctor_detectado = None
-        for dh in doctores_para_mostrar:
-            apellido = dh["doctor"]["apellidos"].split()[0].lower()
-            if apellido in user_choice.lower():
-                doctor_detectado = dh
-                break
+    # ── Caso A: Completo (doctor + día + hora) ──────────────────────────────
+    if sel["tipo"] == "completo":
+        doctor_elegido = sel["doctor"]
+        horario_elegido = sel["horario"]
 
-        fecha_detectada = None
-        if doctor_detectado:
-            for fecha in {h["fecha"] for h in doctor_detectado["horarios"]}:
-                nombre_dia = _format_fecha(fecha).lower()
-                partes = nombre_dia.split()
-                if any(p in user_choice.lower() for p in partes if len(p) > 3):
-                    fecha_detectada = fecha
+    # ── Caso B: Solo doctor → mostrar sus días y horas, pedir día+hora ──
+    elif sel["tipo"] == "solo_doctor":
+        doc_dh = sel["doctor_dh"]
+        doc = sel["doctor"]
+        texto_h, _ = _formatear_doctores([doc_dh])
+        msg_solo_doc = (
+            f"El Dr(a). {doc['nombres']} {doc['apellidos']} tiene disponibilidad en:\n"
+            f"{texto_h}\n"
+            f"¿Qué día y hora prefieres? \U0001f4c5\U0001f550"
+        )
+        resp2 = interrupt({"message": msg_solo_doc, "type": "elegir_dia_hora", "doctor": doc_dh})
+        messages_extra += [AIMessage(content=msg_solo_doc), HumanMessage(content=resp2)]
+
+        sel2 = _detectar_seleccion(resp2, [doc_dh])
+        if sel2["tipo"] == "completo":
+            doctor_elegido = doc
+            horario_elegido = sel2["horario"]
+        elif sel2["tipo"] in ("doctor_y_dia", "solo_dia") and sel2["fecha"]:
+            hors = [h for h in doc_dh["horarios"] if h["fecha"] == sel2["fecha"]]
+            doctor_elegido = doc
+            horario_elegido = _pedir_hora(doc, hors) if hors else None
+        else:
+            # Fallback: primer horario del doctor
+            doctor_elegido = doc
+            horario_elegido = doc_dh["horarios"][0] if doc_dh["horarios"] else None
+
+    # ── Caso C: Doctor + día, sin hora → pedir hora ─────────────────────────
+    elif sel["tipo"] == "doctor_y_dia":
+        doc_dh = sel["doctor_dh"]
+        fecha = sel["fecha"]
+        hors = [h for h in doc_dh["horarios"] if h["fecha"] == fecha]
+        doctor_elegido = sel["doctor"]
+        horario_elegido = _pedir_hora(sel["doctor"], hors) if hors else None
+
+    # ── Caso D: Solo día → mostrar doctores de ese día, pedir doctor+hora ──
+    elif sel["tipo"] == "solo_dia":
+        fecha = sel["fecha"]
+        # Filtrar doctores con slots en ese día
+        docs_ese_dia = [
+            {"doctor": dh["doctor"], "horarios": [h for h in dh["horarios"] if h["fecha"] == fecha]}
+            for dh in doctores_para_mostrar
+            if any(h["fecha"] == fecha for h in dh["horarios"])
+        ]
+        lineas_dia = "\n".join([
+            f"  \U0001f468\u200d\u2695\ufe0f Dr(a). {d['doctor']['nombres']} {d['doctor']['apellidos']}: "
+            + ", ".join(h["hora_inicio"] for h in d["horarios"])
+            for d in docs_ese_dia
+        ])
+        msg_dia = (
+            f"\U0001f4c5 El {_format_fecha(fecha)} tenemos disponibles:\n\n"
+            f"{lineas_dia}\n\n"
+            f"¿Con qué doctor y a qué hora prefieres tu cita? \U0001f468\u200d\u2695\ufe0f\U0001f550"
+        )
+        resp3 = interrupt({"message": msg_dia, "type": "elegir_doctor_hora", "doctores": docs_ese_dia})
+        messages_extra += [AIMessage(content=msg_dia), HumanMessage(content=resp3)]
+
+        sel3 = _detectar_seleccion(resp3, docs_ese_dia)
+        if sel3["tipo"] == "completo":
+            doctor_elegido = sel3["doctor"]
+            horario_elegido = sel3["horario"]
+        elif sel3["tipo"] in ("doctor_y_dia", "solo_doctor") and sel3["doctor_dh"]:
+            hors = [h for h in sel3["doctor_dh"]["horarios"] if h["fecha"] == fecha]
+            doctor_elegido = sel3["doctor"]
+            horario_elegido = _pedir_hora(sel3["doctor"], hors) if hors else None
+        else:
+            # Fallback: parse por número en el listado del día
+            opciones_dia = [
+                {"numero": i+1, "doctor": d["doctor"], "horario": h}
+                for i, d in enumerate(docs_ese_dia)
+                for h in d["horarios"]
+            ]
+            num_dia = _parsear_opcion_numero(
+                resp3, len(opciones_dia),
+                "\n".join([f"{o['numero']}. {o['doctor']['apellidos']} {o['horario']['hora_inicio']}" for o in opciones_dia])
+            )
+            if num_dia and opciones_dia:
+                doctor_elegido = opciones_dia[num_dia - 1]["doctor"]
+                horario_elegido = opciones_dia[num_dia - 1]["horario"]
+
+    # ── Caso E: Desconocido → intentar parse por número de opción ───────────
+    else:
+        opciones_texto_num = "\n".join([
+            f"{o['numero']}. Dr(a). {o['doctor']['apellidos']} - {o['horario']['fecha']} {o['horario']['hora_inicio']}"
+            for o in opciones_flat
+        ])
+        num = _parsear_opcion_numero(user_choice, len(opciones_flat), opciones_texto_num)
+        if num:
+            for o in opciones_flat:
+                if o["numero"] == num:
+                    doctor_elegido = o["doctor"]
+                    horario_elegido = o["horario"]
                     break
 
-        if doctor_detectado and fecha_detectada:
-            horas_disponibles = [
-                h for h in doctor_detectado["horarios"] if h["fecha"] == fecha_detectada
-            ]
-            horas_txt = "\n".join([
-                f"  {i+1}. \U0001f550 {h['hora_inicio']} - {h['hora_fin']}"
-                for i, h in enumerate(horas_disponibles)
-            ])
-            doc = doctor_detectado["doctor"]
-            msg_hora = (
-                f"Perfecto, elegiste al Dr(a). {doc['nombres']} {doc['apellidos']} "
-                f"el {_format_fecha(fecha_detectada)}. \U0001f4c5\n\n"
-                f"Estas son las horas disponibles ese día:\n\n"
-                f"{horas_txt}\n\n"
-                f"¿A qué hora prefieres tu cita? \U0001f550"
-            )
-            user_hora = interrupt({
-                "message": msg_hora,
-                "type": "elegir_hora",
-                "horas": horas_disponibles,
-            })
-            messages_extra += [AIMessage(content=msg_hora), HumanMessage(content=user_hora)]
-
-            hora_num = _parsear_opcion_numero(
-                user_hora, len(horas_disponibles),
-                "\n".join([f"{i+1}. {h['hora_inicio']}" for i, h in enumerate(horas_disponibles)])
-            )
-            if hora_num:
-                horario_elegido = horas_disponibles[hora_num - 1]
-                doctor_elegido = doc
-            elif horas_disponibles:
-                horario_elegido = horas_disponibles[0]
-                doctor_elegido = doc
-
-    # Fallback final
+    # ── Fallback final ───────────────────────────────────────────────────────
     if not doctor_elegido and opciones_flat:
         doctor_elegido = opciones_flat[0]["doctor"]
         horario_elegido = opciones_flat[0]["horario"]
