@@ -106,7 +106,12 @@ def get_sedes_cercanas(distrito_paciente: str, especialidad_id: str) -> list:
     return resultado
 
 
-def get_doctores_con_horarios(sede_id: str, especialidad_id: str) -> list:
+def get_doctores_con_horarios(
+    sede_id: str,
+    especialidad_id: str,
+    fecha_desde: str = None,
+    fecha_hasta: str = None,
+) -> list:
     """
     Busca doctores de una sede+especialidad con sus horarios disponibles.
     
@@ -134,16 +139,17 @@ def get_doctores_con_horarios(sede_id: str, especialidad_id: str) -> list:
         if d["sede_id"] == sede_id and d["especialidad_id"] == especialidad_id
     ]
     
-    hoy = date.today().isoformat()
-    
+    desde = fecha_desde if fecha_desde else date.today().isoformat()
+
     resultado = []
     for doc in docs_filtrados:
-        # Horarios disponibles del doctor a partir de hoy
+        # Horarios disponibles dentro del rango solicitado
         hors = [
             h for h in horarios
             if h["doctor_id"] == doc["id"]
             and h["estado"] == "disponible"
-            and h["fecha"] >= hoy
+            and h["fecha"] >= desde
+            and (fecha_hasta is None or h["fecha"] <= fecha_hasta)
         ]
         # Ordenar por fecha y hora
         hors.sort(key=lambda x: (x["fecha"], x["hora_inicio"]))

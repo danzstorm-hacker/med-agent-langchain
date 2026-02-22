@@ -10,7 +10,7 @@ Optimizaciones de velocidad:
   - get_sedes_cercanas ya filtra sedes con disponibilidad real
   - Flujo robusto: si no hay doctores en la sede elegida, ofrece alternativas
 """
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langgraph.types import interrupt
@@ -68,6 +68,60 @@ def _agrupar_horarios_por_fecha(horarios: list) -> dict:
             agrupados[fecha] = []
         agrupados[fecha].append(h["hora_inicio"])
     return agrupados
+
+
+def _calcular_semanas() -> tuple:
+    """
+    Calcula los rangos de esta semana y la próxima a partir de mañana.
+    Semana = lunes a sábado.
+    Returns: ((desde_actual, hasta_actual), (desde_sig, hasta_sig)) como strings ISO.
+    """
+    hoy = date.today()
+    manana = hoy + timedelta(days=1)
+    # Lunes de la semana que contiene mañana
+    lunes = manana - timedelta(days=manana.weekday())
+    sabado = lunes + timedelta(days=5)
+    semana_actual = (manana.isoformat(), sabado.isoformat())
+    lunes_sig = lunes + timedelta(weeks=1)
+    sabado_sig = lunes_sig + timedelta(days=5)
+    semana_siguiente = (lunes_sig.isoformat(), sabado_sig.isoformat())
+    return semana_actual, semana_siguiente
+
+
+def _quiere_siguiente_semana(text: str) -> bool:
+    """Detecta si el usuario prefiere ver horarios de la semana siguiente."""
+    keywords = [
+        "próxima", "proxima", "siguiente", "otra semana", "no me cuadra",
+        "no puedo", "semana que viene", "otra fecha", "no funciona",
+        "ninguna", "no me quedan", "no disponible", "no me viene",
+    ]
+    return any(k in text.lower() for k in keywords)
+
+
+def _formatear_doctores(doctores_hrs: list) -> tuple:
+    """
+    Formatea el texto de doctores+horarios y construye opciones_flat.
+    Returns: (texto_doctores: str, opciones_flat: list)
+    """
+    texto = ""
+    opciones_flat = []
+    n = 1
+    for dh in doctores_hrs:
+        doc = dh["doctor"]
+        texto += f"\n\U0001f468\u200d\u2695\ufe0f Dr(a). {doc['nombres']} {doc['apellidos']}\n"
+        agrupados = _agrupar_horarios_por_fecha(dh["horarios"])
+        for fecha, horas in agrupados.items():
+            horas_fmt = ", ".join(horas)
+            texto += f"   \U0001f4c5 {_format_fecha(fecha)}: {horas_fmt}\n"
+        for h in dh["horarios"]:
+            opciones_flat.append({
+                "numero": n,
+                "doctor": doc,
+                "horario": h,
+                "texto": f"{doc['apellidos']} - {_format_fecha(h['fecha'])} {h['hora_inicio']}",
+            })
+            n += 1
+    return texto, opciones_flat
 
 
 def _parsear_sede(user_input: str, sedes: list) -> dict | None:
@@ -308,58 +362,77 @@ def nodo_doctores_horarios(state: AgentState) -> dict:
             "doctores_horarios": doctores_hrs,
         }
 
-    # ── Agrupar horarios por doctor y fecha para mostrar limpio ──
-    # Mostramos: Dr. X → Lunes 23: 08:00, 09:00, 10:00...
-    texto_doctores = ""
-    # Mapa rápido: doctor_id+fecha → lista de horarios
-    mapa_horarios: dict = {}  # (doc_id, fecha) -> [horario_dict]
-    for dh in doctores_hrs:
-        doc = dh["doctor"]
-        texto_doctores += f"\n\U0001f468\u200d\u2695\ufe0f Dr(a). {doc['nombres']} {doc['apellidos']}\n"
-        agrupados = _agrupar_horarios_por_fecha(dh["horarios"])
-        for fecha, horas in agrupados.items():
-            fecha_fmt = _format_fecha(fecha)
-            horas_fmt = ", ".join(horas)
-            texto_doctores += f"   \U0001f4c5 {fecha_fmt}: {horas_fmt}\n"
-            mapa_horarios[(doc["id"], fecha)] = [
-                h for h in dh["horarios"] if h["fecha"] == fecha
-            ]
+    # ── Calcular rangos de esta semana y la próxima ──
+    (desde_actual, hasta_actual), (desde_sig, hasta_sig) = _calcular_semanas()
 
-        opciones_flat = [
-            {
-                "numero": i + 1,
-                "doctor": dh["doctor"],
-                "horario": h,
-                "texto": f"{dh['doctor']['apellidos']} - {_format_fecha(h['fecha'])} {h['hora_inicio']}",
+    # Doctores disponibles ESTA SEMANA
+    doctores_semana = get_doctores_con_horarios(
+        sede["id"], paciente["especialidad_id"],
+        fecha_desde=desde_actual, fecha_hasta=hasta_actual,
+    )
+
+    messages_extra = []
+    doctores_para_mostrar = doctores_semana
+    label_semana = "esta semana"
+
+    # ── Si no hay slots esta semana → preguntar por la siguiente ──
+    if not doctores_semana:
+        msg_sin_semana = (
+            f"No hay disponibilidad **esta semana** en {sede['nombre']} "
+            f"para {especialidad}. \U0001f615\n\n"
+            f"¿Te gustaría ver los horarios disponibles para la **próxima semana**? \U0001f4c5"
+        )
+        user_ans = interrupt({
+            "message": msg_sin_semana,
+            "type": "preguntar_siguiente_semana",
+        })
+        messages_extra += [AIMessage(content=msg_sin_semana), HumanMessage(content=user_ans)]
+
+        confirmado = any(w in user_ans.lower() for w in [
+            "sí", "si", "yes", "claro", "ok", "dale", "perfecto", "sólo", "solo", "quiero", "s"
+        ])
+        if not confirmado:
+            msg_fin = "Entendido. Si cambias de opinión o necesitas otra fecha, con gusto te ayudamos. \U0001f60a"
+            return {
+                "messages": messages_extra + [AIMessage(content=msg_fin)],
+                "etapa": "sin_doctores",
+                "doctores_horarios": [],
             }
-            for i, h in enumerate(dh["horarios"])
-        ]
 
-    # Re-construir opciones_flat con numeración global
-    opciones_flat = []
-    n = 1
-    for dh in doctores_hrs:
-        for h in dh["horarios"]:
-            opciones_flat.append({
-                "numero": n,
-                "doctor": dh["doctor"],
-                "horario": h,
-                "texto": f"{dh['doctor']['apellidos']} - {_format_fecha(h['fecha'])} {h['hora_inicio']}",
-            })
-            n += 1
+        # Cargar próxima semana
+        doctores_semana_sig = get_doctores_con_horarios(
+            sede["id"], paciente["especialidad_id"],
+            fecha_desde=desde_sig, fecha_hasta=hasta_sig,
+        )
+        if not doctores_semana_sig:
+            msg_fin = (
+                f"Lo siento, tampoco hay disponibilidad la próxima semana en {sede['nombre']}. \U0001f615\n"
+                f"Por favor llámanos al 01-422-0000 y te ayudamos a encontrar una fecha."
+            )
+            return {
+                "messages": messages_extra + [AIMessage(content=msg_fin)],
+                "etapa": "sin_doctores",
+                "doctores_horarios": [],
+            }
 
-    prompt = f"""El paciente eligió la sede {sede['nombre']}.
-Especialidad: {especialidad}.
-Estos son los doctores disponibles con sus horarios:
+        doctores_para_mostrar = doctores_semana_sig
+        label_semana = "la próxima semana"
 
-{texto_doctores}
+    # ── Formatear y mostrar doctores de la semana elegida ──
+    texto_drs, opciones_flat = _formatear_doctores(doctores_para_mostrar)
+
+    prompt = f"""El paciente va a la sede {sede['nombre']} para {especialidad}.
+Aquí están los doctores disponibles {label_semana}:
+
+{texto_drs}
 
 Genera una respuesta que:
-1. Confirme la sede elegida
-2. Muestre los doctores con sus horarios exactamente como están arriba
-3. Pida al paciente que elija un doctor específico y también el día y la hora
+1. Indique que estos son los horarios disponibles {label_semana}
+2. Muestre exactamente los doctores y horarios como están arriba
+3. {'Mencione que si ningún horario de esta semana le viene bien puede pedir ver la próxima semana' if label_semana == 'esta semana' else 'Pida elegir doctor, día y hora'}
+4. Pida al paciente que elija doctor, día y hora
 
-IMPORTANTE: Muestra los horarios exactamente como se proporcionan."""
+IMPORTANTE: Muestra los doctores y horarios exactamente como se presentan."""
 
     response = llm_chat.invoke([
         SystemMessage(content=SYSTEM_PROMPT),
@@ -367,24 +440,63 @@ IMPORTANTE: Muestra los horarios exactamente como se proporcionan."""
     ])
     agent_msg = response.content
 
-    # ── HITL 1: Pausar y esperar elección de doctor (+día y posiblemente hora) ──
+    # ── HITL: Pausar y esperar elección ──
     user_choice = interrupt({
         "message": agent_msg,
         "type": "elegir_doctor_horario",
-        "doctores": doctores_hrs,
+        "doctores": doctores_para_mostrar,
     })
+    messages_extra += [AIMessage(content=agent_msg), HumanMessage(content=user_choice)]
 
-    # ── Intentar parsear doctor + día + hora ──
+    # ── Detectar si el usuario pide la semana siguiente ──
+    if label_semana == "esta semana" and _quiere_siguiente_semana(user_choice):
+        doctores_semana_sig = get_doctores_con_horarios(
+            sede["id"], paciente["especialidad_id"],
+            fecha_desde=desde_sig, fecha_hasta=hasta_sig,
+        )
+        if not doctores_semana_sig:
+            msg_no_sig = (
+                f"Lo siento, tampoco hay disponibilidad la próxima semana en {sede['nombre']}. \U0001f615\n"
+                f"Por favor llámanos al 01-422-0000."
+            )
+            return {
+                "messages": messages_extra + [AIMessage(content=msg_no_sig)],
+                "etapa": "sin_doctores",
+                "doctores_horarios": [],
+            }
+
+        texto_sig, opciones_flat = _formatear_doctores(doctores_semana_sig)
+        prompt_sig = f"""El paciente quiere ver horarios de la próxima semana en {sede['nombre']} para {especialidad}.
+Aquí están los doctores disponibles la próxima semana:
+
+{texto_sig}
+
+Genera una respuesta amigable mostrando estos doctores y pidiendo que elija doctor, día y hora.
+IMPORTANTE: Muestra los doctores y horarios exactamente como están arriba."""
+
+        resp_sig = llm_chat.invoke([
+            SystemMessage(content=SYSTEM_PROMPT),
+            HumanMessage(content=prompt_sig),
+        ])
+        agent_msg_sig = resp_sig.content
+
+        user_choice = interrupt({
+            "message": agent_msg_sig,
+            "type": "elegir_doctor_horario_semana_siguiente",
+            "doctores": doctores_semana_sig,
+        })
+        messages_extra += [AIMessage(content=agent_msg_sig), HumanMessage(content=user_choice)]
+        doctores_para_mostrar = doctores_semana_sig
+
+    # ── Parsear selección de doctor + horario ──
     opciones_texto = "\n".join([
         f"{o['numero']}. Dr(a). {o['doctor']['apellidos']} - {o['horario']['fecha']} {o['horario']['hora_inicio']}"
         for o in opciones_flat
     ])
-
     num = _parsear_opcion_numero(user_choice, len(opciones_flat), opciones_texto)
 
     doctor_elegido = None
     horario_elegido = None
-    messages_extra = [AIMessage(content=agent_msg), HumanMessage(content=user_choice)]
 
     if num:
         for o in opciones_flat:
@@ -393,31 +505,27 @@ IMPORTANTE: Muestra los horarios exactamente como se proporcionan."""
                 horario_elegido = o["horario"]
                 break
 
-    # ── Si no se detectó hora: intentar detectar doctor+fecha sin hora ──
+    # ── Si no hubo hora específica: detectar doctor+día y preguntar hora ──
     if not horario_elegido:
-        # Buscar qué doctor mencionó el usuario (por apellido)
         doctor_detectado = None
-        for dh in doctores_hrs:
+        for dh in doctores_para_mostrar:
             apellido = dh["doctor"]["apellidos"].split()[0].lower()
             if apellido in user_choice.lower():
                 doctor_detectado = dh
                 break
 
-        # Buscar qué fecha mencionó (por nombre del día o fecha)
         fecha_detectada = None
         if doctor_detectado:
             for fecha in {h["fecha"] for h in doctor_detectado["horarios"]}:
-                nombre_dia = _format_fecha(fecha).lower()  # "lunes 23 de febrero"
-                partes = nombre_dia.split()  # ["lunes", "23", "de", "febrero"]
+                nombre_dia = _format_fecha(fecha).lower()
+                partes = nombre_dia.split()
                 if any(p in user_choice.lower() for p in partes if len(p) > 3):
                     fecha_detectada = fecha
                     break
 
         if doctor_detectado and fecha_detectada:
-            # Tenemos doctor + día pero NO hora → preguntar hora específica
             horas_disponibles = [
-                h for h in doctor_detectado["horarios"]
-                if h["fecha"] == fecha_detectada
+                h for h in doctor_detectado["horarios"] if h["fecha"] == fecha_detectada
             ]
             horas_txt = "\n".join([
                 f"  {i+1}. \U0001f550 {h['hora_inicio']} - {h['hora_fin']}"
@@ -431,8 +539,6 @@ IMPORTANTE: Muestra los horarios exactamente como se proporcionan."""
                 f"{horas_txt}\n\n"
                 f"¿A qué hora prefieres tu cita? \U0001f550"
             )
-
-            # ── HITL 2: Preguntar hora específica ──
             user_hora = interrupt({
                 "message": msg_hora,
                 "type": "elegir_hora",
@@ -440,18 +546,18 @@ IMPORTANTE: Muestra los horarios exactamente como se proporcionan."""
             })
             messages_extra += [AIMessage(content=msg_hora), HumanMessage(content=user_hora)]
 
-            # Parsear hora elegida
-            hora_num = _parsear_opcion_numero(user_hora, len(horas_disponibles),
-                "\n".join([f"{i+1}. {h['hora_inicio']}" for i, h in enumerate(horas_disponibles)]))
+            hora_num = _parsear_opcion_numero(
+                user_hora, len(horas_disponibles),
+                "\n".join([f"{i+1}. {h['hora_inicio']}" for i, h in enumerate(horas_disponibles)])
+            )
             if hora_num:
                 horario_elegido = horas_disponibles[hora_num - 1]
                 doctor_elegido = doc
             elif horas_disponibles:
-                # Fallback: primera hora disponible
                 horario_elegido = horas_disponibles[0]
                 doctor_elegido = doc
 
-    # Fallback final: primera opción
+    # Fallback final
     if not doctor_elegido and opciones_flat:
         doctor_elegido = opciones_flat[0]["doctor"]
         horario_elegido = opciones_flat[0]["horario"]
@@ -459,7 +565,7 @@ IMPORTANTE: Muestra los horarios exactamente como se proporcionan."""
     return {
         "messages": messages_extra,
         "etapa": "doctor_elegido",
-        "doctores_horarios": doctores_hrs,
+        "doctores_horarios": doctores_para_mostrar,
         "doctor_elegido": doctor_elegido,
         "horario_elegido": horario_elegido,
     }

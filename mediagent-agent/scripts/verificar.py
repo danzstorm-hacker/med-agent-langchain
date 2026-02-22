@@ -1,15 +1,13 @@
-from agent.graph import graph
-from agent.tools import get_sedes_cercanas, get_doctores_con_horarios
+from datetime import date, timedelta
 
-print("✅ Imports OK")
+hoy = date(2026, 2, 22)
+manana = hoy + timedelta(days=1)
+lunes = manana - timedelta(days=manana.weekday())
+sabado = lunes + timedelta(days=5)
+lunes_sig = lunes + timedelta(weeks=1)
+sabado_sig = lunes_sig + timedelta(days=5)
 
-sedes = get_sedes_cercanas("Miraflores", "esp-002")
-print(f"Sedes disponibles para pac-001 (Miraflores, Cardiología esp-002): {[s['nombre'] for s in sedes]}")
-
-if sedes:
-    docs = get_doctores_con_horarios(sedes[0]["id"], "esp-002")
-    print(f"Doctores en {sedes[0]['nombre']}: {len(docs)} doctores con horarios")
-    if docs:
-        print(f"  Ejemplo: Dr. {docs[0]['doctor']['apellidos']} — {len(docs[0]['horarios'])} slots")
-else:
-    print("⚠️ No hay sedes disponibles")
+dias = ["Lun","Mar","Mie","Jue","Vie","Sab","Dom"]
+print(f"Hoy:           {hoy} ({dias[hoy.weekday()]})")
+print(f"Esta semana:   {manana} -> {sabado}")
+print(f"Prox semana:   {lunes_sig} -> {sabado_sig}")
