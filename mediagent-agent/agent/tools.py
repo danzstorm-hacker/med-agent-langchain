@@ -59,32 +59,50 @@ def get_especialidad_nombre(especialidad_id: str) -> str:
 
 def get_sedes_cercanas(distrito_paciente: str, especialidad_id: str) -> list:
     """
-    Busca sedes que tengan la especialidad requerida y estén en el distrito
-    del paciente o en distritos cercanos.
-    
-    Equivale a:
-    SELECT s.* FROM sedes s
-    JOIN sede_especialidades se ON s.id = se.sede_id
-    WHERE se.especialidad_id = :esp
-      AND (s.distrito = :distrito OR :distrito = ANY(s.distritos_cercanos))
+    Busca sedes que tengan la especialidad requerida, estén cercanas al
+    distrito del paciente Y que tengan al menos un doctor con horarios
+    disponibles a partir de hoy.
+
+    Solo muestra sedes con disponibilidad real para evitar mostrar opciones
+    que luego terminen en 'no hay doctores disponibles'.
     """
     sedes = _load("sedes.json")
     sede_esp = _load("sede_especialidades.json")
-    
+    doctores = _load("doctores.json")
+    horarios = _load("horarios.json")
+
+    hoy = date.today().isoformat()
+
     # IDs de sedes que tienen la especialidad
     sedes_con_esp = {
-        se["sede_id"] for se in sede_esp 
+        se["sede_id"] for se in sede_esp
         if se["especialidad_id"] == especialidad_id
     }
-    
-    # Filtrar por distrito cercano
+
+    # Doctor IDs con horarios disponibles futuros (precalcular una vez)
+    docs_con_horario_disponible = {
+        h["doctor_id"] for h in horarios
+        if h["estado"] == "disponible" and h["fecha"] >= hoy
+    }
+
+    # Doctores de cada sede+especialidad con disponibilidad real
+    def sede_tiene_disponibilidad(sede_id: str) -> bool:
+        docs_en_sede = [
+            d for d in doctores
+            if d["sede_id"] == sede_id and d["especialidad_id"] == especialidad_id
+        ]
+        return any(d["id"] in docs_con_horario_disponible for d in docs_en_sede)
+
+    # Filtrar por distrito cercano Y disponibilidad real
     resultado = []
     for s in sedes:
         if s["id"] not in sedes_con_esp:
             continue
-        if s["distrito"] == distrito_paciente or distrito_paciente in s.get("distritos_cercanos", []):
+        if s["distrito"] != distrito_paciente and distrito_paciente not in s.get("distritos_cercanos", []):
+            continue
+        if sede_tiene_disponibilidad(s["id"]):
             resultado.append(s)
-    
+
     return resultado
 
 

@@ -3,6 +3,12 @@ MediAgent - Nodos del agente LangGraph
 
 Cada función es un nodo del grafo. Los nodos que necesitan input del usuario
 usan interrupt() para pausar el grafo y esperar la respuesta.
+
+Optimizaciones de velocidad:
+  - Modelo: claude-3-haiku-20240307 (5x más rápido que Sonnet, ideal para este caso)
+  - LLM dual: llm_chat (respuestas) vs llm_parse (parsing de intención, max_tokens=5)
+  - get_sedes_cercanas ya filtra sedes con disponibilidad real
+  - Flujo robusto: si no hay doctores en la sede elegida, ofrece alternativas
 """
 from datetime import datetime
 from langchain_anthropic import ChatAnthropic
@@ -21,11 +27,20 @@ from agent.tools import (
 )
 from agent.state import AgentState
 
-# ── LLM ──
-llm = ChatAnthropic(
-    model="claude-sonnet-4-20250514",
+# ── LLMs ──────────────────────────────────────────────────────────────────────
+# llm_chat: genera respuestas conversacionales — Haiku es más que suficiente
+# y entre 3-5x más rápido que Sonnet para estas tareas
+llm_chat = ChatAnthropic(
+    model="claude-3-haiku-20240307",
     temperature=0.3,
-    max_tokens=1024,
+    max_tokens=512,
+)
+
+# llm_parse: solo extrae un número o sí/no — max_tokens mínimo = máxima velocidad
+llm_parse = ChatAnthropic(
+    model="claude-3-haiku-20240307",
+    temperature=0,
+    max_tokens=5,
 )
 
 SYSTEM_PROMPT = """Eres MediAgent, un asistente virtual médico amable y profesional.
@@ -36,7 +51,7 @@ NO inventes información. Solo usa los datos que se te proporcionan."""
 
 
 def _format_fecha(fecha_str: str) -> str:
-    """Convierte '2025-02-24' a 'Lunes 24 de febrero'."""
+    """Convierte '2026-02-24' a 'Lunes 24 de febrero'."""
     dias = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
     meses = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio",
              "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
@@ -55,6 +70,77 @@ def _agrupar_horarios_por_fecha(horarios: list) -> dict:
     return agrupados
 
 
+def _parsear_sede(user_input: str, sedes: list) -> dict | None:
+    """
+    Intenta identificar la sede elegida.
+    1. Por número (más rápido, sin LLM)
+    2. Por nombre/distrito en el texto (sin LLM)
+    3. Fallback al LLM parser (solo si los anteriores fallan)
+    """
+    txt = user_input.strip()
+
+    # Intento 1: número directo
+    try:
+        num = int(txt)
+        if 1 <= num <= len(sedes):
+            return sedes[num - 1]
+    except ValueError:
+        pass
+
+    # Intento 2: keyword match (sin LLM — más rápido)
+    txt_lower = txt.lower()
+    for s in sedes:
+        keywords = [s["nombre"].lower(), s["distrito"].lower(), s["nombre"].split()[-1].lower()]
+        if any(k in txt_lower for k in keywords):
+            return s
+
+    # Intento 3: LLM parser con max_tokens=5
+    opciones_txt = "\n".join([f"{i+1}. {s['nombre']} ({s['distrito']})" for i, s in enumerate(sedes)])
+    parse_prompt = f"""El paciente respondió: "{user_input}"
+Las opciones eran:
+{opciones_txt}
+¿Cuál sede eligió? Responde SOLO el número (1, 2, etc). Si no es claro responde 0."""
+
+    resp = llm_parse.invoke([HumanMessage(content=parse_prompt)])
+    try:
+        num = int(resp.content.strip())
+        if 1 <= num <= len(sedes):
+            return sedes[num - 1]
+    except ValueError:
+        pass
+
+    return None
+
+
+def _parsear_opcion_numero(user_input: str, max_opcion: int, opciones_texto: str) -> int | None:
+    """
+    Parsea la opción elegida por número.
+    1. Directo sin LLM
+    2. Fallback LLM parser
+    """
+    try:
+        num = int(user_input.strip())
+        if 1 <= num <= max_opcion:
+            return num
+    except ValueError:
+        pass
+
+    # Fallback LLM
+    parse_prompt = f"""El paciente respondió: "{user_input}"
+Las opciones eran:
+{opciones_texto}
+¿Cuál opción eligió? Responde SOLO el número. Si no es claro responde 1."""
+    resp = llm_parse.invoke([HumanMessage(content=parse_prompt)])
+    try:
+        num = int(resp.content.strip())
+        if 1 <= num <= max_opcion:
+            return num
+    except ValueError:
+        pass
+
+    return None
+
+
 # ══════════════════════════════════════════════
 # NODO 1: Clasificar intención + Sugerir sedes
 # ══════════════════════════════════════════════
@@ -62,36 +148,39 @@ def _agrupar_horarios_por_fecha(horarios: list) -> dict:
 def nodo_clasificar_y_sedes(state: AgentState) -> dict:
     """
     Recibe el primer mensaje del paciente.
-    Identifica la intención, saluda por nombre y muestra sedes cercanas.
-    Luego PAUSA esperando que el paciente elija una sede.
+    Muestra SOLO las sedes con disponibilidad real (filtradas en tools.py).
+    Pausa esperando que el paciente elija una sede.
     """
     paciente = state["paciente"]
     nombre = paciente["nombres"]
     especialidad = get_especialidad_nombre(paciente["especialidad_id"])
     distrito = paciente["distrito"]
-    
-    # Buscar sedes cercanas con la especialidad
+
+    # Sedes cercanas CON disponibilidad real (ya filtradas en get_sedes_cercanas)
     sedes = get_sedes_cercanas(distrito, paciente["especialidad_id"])
-    
+
     if not sedes:
-        msg = f"Lo siento {nombre}, no encontramos sedes cercanas a {distrito} con {especialidad}. 😔"
+        msg = (
+            f"Lo siento {nombre}, en este momento no encontramos sedes cercanas "
+            f"a {distrito} con disponibilidad en {especialidad}. 😔\n"
+            f"Te recomendamos llamar al 01-422-0000 para más opciones."
+        )
         return {
             "messages": [AIMessage(content=msg)],
             "etapa": "sin_sedes",
             "sedes_disponibles": [],
         }
-    
-    # Formatear opciones de sedes
+
+    # Formatear opciones
     opciones_texto = "\n".join([
         f"  {i+1}. 🏥 {s['nombre']} — {s['direccion']} ({s['distrito']})"
         for i, s in enumerate(sedes)
     ])
-    
-    # Usar LLM para generar respuesta natural
+
     prompt = f"""El paciente {nombre} vive en {distrito} y necesita una consulta de {especialidad}.
 Su mensaje fue: "{state['messages'][-1].content}"
 
-Las sedes cercanas disponibles son:
+Las sedes disponibles (con doctores y horarios confirmados) son:
 {opciones_texto}
 
 Genera una respuesta amigable que:
@@ -102,59 +191,24 @@ Genera una respuesta amigable que:
 
 IMPORTANTE: Muestra las sedes exactamente como están arriba, con sus números."""
 
-    response = llm.invoke([
+    response = llm_chat.invoke([
         SystemMessage(content=SYSTEM_PROMPT),
         HumanMessage(content=prompt),
     ])
-    
     agent_msg = response.content
-    
+
     # ── HITL: Pausar y esperar elección de sede ──
     user_choice = interrupt({
         "message": agent_msg,
         "type": "elegir_sede",
         "opciones": [{"numero": i+1, "sede": s} for i, s in enumerate(sedes)],
     })
-    
-    # ── Después del resume: procesar elección ──
-    sede_elegida = None
-    
-    # Intentar parsear por número
-    try:
-        num = int(user_choice.strip())
-        if 1 <= num <= len(sedes):
-            sede_elegida = sedes[num - 1]
-    except (ValueError, AttributeError):
-        pass
-    
-    # Si no fue número, buscar por nombre
-    if not sede_elegida:
-        for s in sedes:
-            if any(keyword.lower() in user_choice.lower() for keyword in [
-                s["nombre"], s["distrito"], s["nombre"].split()[-1]
-            ]):
-                sede_elegida = s
-                break
-    
-    # Si aún no encontramos, usar LLM para interpretar
-    if not sede_elegida:
-        parse_prompt = f"""El paciente respondió: "{user_choice}"
-Las opciones eran:
-{opciones_texto}
 
-¿Cuál sede eligió? Responde SOLO con el número (1, 2, etc). Si no es claro, responde "0"."""
-        
-        parse_response = llm.invoke([HumanMessage(content=parse_prompt)])
-        try:
-            num = int(parse_response.content.strip())
-            if 1 <= num <= len(sedes):
-                sede_elegida = sedes[num - 1]
-        except ValueError:
-            pass
-    
+    # Parsear elección (rápido: número → keyword → LLM)
+    sede_elegida = _parsear_sede(user_choice, sedes)
     if not sede_elegida:
-        sede_elegida = sedes[0]  # Fallback: primera opción
-    
+        sede_elegida = sedes[0]  # fallback: primera opción
+
     return {
         "messages": [
             AIMessage(content=agent_msg),
@@ -173,39 +227,101 @@ Las opciones eran:
 def nodo_doctores_horarios(state: AgentState) -> dict:
     """
     Muestra los doctores de la sede elegida con sus horarios disponibles.
-    Luego PAUSA esperando que el paciente elija doctor + horario.
+    Si no hay doctores, ofrece al paciente elegir otra sede disponible.
+    Pausa esperando que el paciente elija doctor + horario.
     """
     paciente = state["paciente"]
     sede = state["sede_elegida"]
     especialidad = get_especialidad_nombre(paciente["especialidad_id"])
-    
+    sedes_disponibles = state.get("sedes_disponibles", [])
+
     # Buscar doctores con horarios
     doctores_hrs = get_doctores_con_horarios(sede["id"], paciente["especialidad_id"])
-    
+
+    # ── Caso: no hay doctores en la sede elegida ──
     if not doctores_hrs:
-        msg = f"Lo siento, no hay doctores con horarios disponibles en {sede['nombre']} para {especialidad}. 😔"
+        # Otras sedes disponibles (excluyendo la actual)
+        otras_sedes = [s for s in sedes_disponibles if s["id"] != sede["id"]]
+
+        if not otras_sedes:
+            msg = (
+                f"Lo siento, no hay disponibilidad en {sede['nombre']} para {especialidad} "
+                f"y tampoco hay otras sedes cercanas disponibles. 😔\n"
+                f"Te recomendamos llamar al 01-422-0000 para más opciones."
+            )
+            return {
+                "messages": [AIMessage(content=msg)],
+                "etapa": "sin_doctores",
+                "doctores_horarios": [],
+            }
+
+        # Hay otras sedes: ofrecer alternativas
+        opciones_texto = "\n".join([
+            f"  {i+1}. 🏥 {s['nombre']} — {s['direccion']} ({s['distrito']})"
+            for i, s in enumerate(otras_sedes)
+        ])
+
+        msg_alternativas = (
+            f"Lo siento, en este momento no hay disponibilidad en **{sede['nombre']}** "
+            f"para {especialidad}. 😔\n\n"
+            f"Pero tenemos disponibilidad en estas otras sedes cercanas:\n\n"
+            f"{opciones_texto}\n\n"
+            f"¿Cuál de estas sedes prefieres? 😊"
+        )
+
+        # ── HITL: Pausar y esperar nueva elección ──
+        user_choice = interrupt({
+            "message": msg_alternativas,
+            "type": "elegir_sede_alternativa",
+            "opciones": [{"numero": i+1, "sede": s} for i, s in enumerate(otras_sedes)],
+        })
+
+        nueva_sede = _parsear_sede(user_choice, otras_sedes)
+        if not nueva_sede:
+            nueva_sede = otras_sedes[0]
+
+        # Actualizar sede y buscar doctores en la nueva sede
+        sede = nueva_sede
+        doctores_hrs = get_doctores_con_horarios(sede["id"], paciente["especialidad_id"])
+
+        if not doctores_hrs:
+            msg = f"Parece que tampoco hay disponibilidad en {sede['nombre']} en este momento. 😔 Por favor llama al 01-422-0000."
+            return {
+                "messages": [
+                    AIMessage(content=msg_alternativas),
+                    HumanMessage(content=user_choice),
+                    AIMessage(content=msg),
+                ],
+                "etapa": "sin_doctores",
+                "sede_elegida": sede,
+                "doctores_horarios": [],
+            }
+
+        # Continuar con la nueva sede
         return {
-            "messages": [AIMessage(content=msg)],
-            "etapa": "sin_doctores",
-            "doctores_horarios": [],
+            "messages": [
+                AIMessage(content=msg_alternativas),
+                HumanMessage(content=user_choice),
+            ],
+            "etapa": "sede_elegida",
+            "sede_elegida": sede,
+            "doctores_horarios": doctores_hrs,
         }
-    
-    # Formatear doctores con horarios
+
+    # ── Caso normal: hay doctores disponibles ──
     texto_doctores = ""
-    opciones_flat = []  # Lista plana para facilitar selección
+    opciones_flat = []
     opcion_num = 1
-    
+
     for dh in doctores_hrs:
         doc = dh["doctor"]
         texto_doctores += f"\n👨‍⚕️ Dr(a). {doc['nombres']} {doc['apellidos']} ({doc['numero_colegiatura']})\n"
-        
         agrupados = _agrupar_horarios_por_fecha(dh["horarios"])
         for fecha, horas in agrupados.items():
             fecha_fmt = _format_fecha(fecha)
             horas_fmt = ", ".join(horas)
             texto_doctores += f"   📅 {fecha_fmt}: {horas_fmt}\n"
-        
-        # Agregar a opciones planas
+
         for h in dh["horarios"]:
             opciones_flat.append({
                 "numero": opcion_num,
@@ -214,8 +330,7 @@ def nodo_doctores_horarios(state: AgentState) -> dict:
                 "texto": f"{doc['apellidos']} - {_format_fecha(h['fecha'])} {h['hora_inicio']}"
             })
             opcion_num += 1
-    
-    # Generar respuesta con LLM
+
     prompt = f"""El paciente eligió la sede {sede['nombre']}.
 Especialidad: {especialidad}.
 Estos son los doctores disponibles con sus horarios:
@@ -229,56 +344,42 @@ Genera una respuesta que:
 
 IMPORTANTE: Muestra los horarios exactamente como se proporcionan."""
 
-    response = llm.invoke([
+    response = llm_chat.invoke([
         SystemMessage(content=SYSTEM_PROMPT),
         HumanMessage(content=prompt),
     ])
-    
     agent_msg = response.content
-    
+
     # ── HITL: Pausar y esperar elección de doctor + horario ──
     user_choice = interrupt({
         "message": agent_msg,
         "type": "elegir_doctor_horario",
         "doctores": doctores_hrs,
     })
-    
-    # ── Después del resume: parsear elección ──
-    # Usar LLM para extraer doctor y horario de la respuesta libre
+
+    # Parsear elección (LLM parse rápido)
     opciones_texto = "\n".join([
         f"{o['numero']}. Dr(a). {o['doctor']['apellidos']} - {o['horario']['fecha']} {o['horario']['hora_inicio']}"
         for o in opciones_flat
     ])
-    
-    parse_prompt = f"""El paciente respondió: "{user_choice}"
 
-Las opciones disponibles son:
-{opciones_texto}
+    num = _parsear_opcion_numero(user_choice, len(opciones_flat), opciones_texto)
 
-Identifica qué opción eligió el paciente. Responde SOLO con el número de la opción.
-Si el paciente mencionó un doctor y un horario, busca la opción que coincida.
-Si no es claro, responde con la opción más probable. Responde SOLO un número."""
-
-    parse_response = llm.invoke([HumanMessage(content=parse_prompt)])
-    
     doctor_elegido = None
     horario_elegido = None
-    
-    try:
-        num = int(parse_response.content.strip())
+
+    if num:
         for o in opciones_flat:
             if o["numero"] == num:
                 doctor_elegido = o["doctor"]
                 horario_elegido = o["horario"]
                 break
-    except ValueError:
-        pass
-    
-    # Fallback: primera opción del primer doctor
+
+    # Fallback: primera opción
     if not doctor_elegido and opciones_flat:
         doctor_elegido = opciones_flat[0]["doctor"]
         horario_elegido = opciones_flat[0]["horario"]
-    
+
     return {
         "messages": [
             AIMessage(content=agent_msg),
@@ -306,7 +407,7 @@ def nodo_confirmar(state: AgentState) -> dict:
     horario = state["horario_elegido"]
     especialidad = get_especialidad_nombre(paciente["especialidad_id"])
     fecha_fmt = _format_fecha(horario["fecha"])
-    
+
     resumen = f"""📋 **Resumen de tu cita:**
 
 🏥 **Sede:** {sede['nombre']}
@@ -324,11 +425,13 @@ def nodo_confirmar(state: AgentState) -> dict:
         "message": resumen,
         "type": "confirmar_cita",
     })
-    
-    # Verificar confirmación
+
+    # Parsear confirmación (sin LLM — simple keyword match)
     respuesta = user_choice.strip().lower()
-    confirmado = any(word in respuesta for word in ["sí", "si", "yes", "confirmo", "ok", "dale", "claro", "por supuesto"])
-    
+    confirmado = any(word in respuesta for word in [
+        "sí", "si", "yes", "confirmo", "ok", "dale", "claro", "por supuesto", "s"
+    ])
+
     if not confirmado:
         msg = "Entendido, la cita no fue agendada. ¿Hay algo más en lo que pueda ayudarte? 😊"
         return {
@@ -339,7 +442,7 @@ def nodo_confirmar(state: AgentState) -> dict:
             ],
             "etapa": "cancelado",
         }
-    
+
     return {
         "messages": [
             AIMessage(content=resumen),
@@ -363,16 +466,15 @@ def nodo_agendar(state: AgentState) -> dict:
     horario = state["horario_elegido"]
     especialidad = get_especialidad_nombre(paciente["especialidad_id"])
     fecha_fmt = _format_fecha(horario["fecha"])
-    
-    # Crear la cita en BD
+
+    # Crear la cita
     cita = crear_cita(
         paciente_id=paciente["id"],
         doctor_id=doctor["id"],
         sede_id=sede["id"],
         horario_id=horario["id"],
     )
-    
-    # Mensaje de confirmación
+
     msg = f"""✅ ¡Tu cita ha sido confirmada exitosamente!
 
 📌 **Número de cita:** {cita['id']}

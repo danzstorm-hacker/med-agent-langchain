@@ -25,8 +25,12 @@ def _router_post_sedes(state: AgentState) -> str:
 
 def _router_post_doctores(state: AgentState) -> str:
     """Decide a dónde ir después de elegir doctor+horario."""
-    if state.get("etapa") == "sin_doctores":
+    etapa = state.get("etapa")
+    if etapa == "sin_doctores":
         return END
+    if etapa == "sede_elegida":
+        # El nodo eligió una sede alternativa, volver a buscar doctores
+        return "doctores_horarios"
     return "confirmar"
 
 
