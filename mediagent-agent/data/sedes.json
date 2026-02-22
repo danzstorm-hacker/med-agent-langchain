@@ -1,0 +1,42 @@
+[
+  {
+    "id": "sede-001",
+    "nombre": "MediAgent San Isidro",
+    "distrito": "San Isidro",
+    "distritos_cercanos": ["Miraflores", "Lince", "Magdalena del Mar", "Jesús María", "Surquillo"],
+    "direccion": "Av. Javier Prado Este 456, San Isidro",
+    "telefono": "01-422-0001"
+  },
+  {
+    "id": "sede-002",
+    "nombre": "MediAgent Miraflores",
+    "distrito": "Miraflores",
+    "distritos_cercanos": ["San Isidro", "Surquillo", "Barranco", "Santiago de Surco"],
+    "direccion": "Av. José Larco 1250, Miraflores",
+    "telefono": "01-422-0002"
+  },
+  {
+    "id": "sede-003",
+    "nombre": "MediAgent San Borja",
+    "distrito": "San Borja",
+    "distritos_cercanos": ["Santiago de Surco", "Surquillo", "San Isidro", "La Victoria", "San Luis"],
+    "direccion": "Av. San Borja Norte 789, San Borja",
+    "telefono": "01-422-0003"
+  },
+  {
+    "id": "sede-004",
+    "nombre": "MediAgent Surco",
+    "distrito": "Santiago de Surco",
+    "distritos_cercanos": ["San Borja", "Miraflores", "Chorrillos", "Barranco", "La Molina"],
+    "direccion": "Av. Caminos del Inca 3200, Santiago de Surco",
+    "telefono": "01-422-0004"
+  },
+  {
+    "id": "sede-005",
+    "nombre": "MediAgent Los Olivos",
+    "distrito": "Los Olivos",
+    "distritos_cercanos": ["San Martín de Porres", "Independencia", "Comas", "Puente Piedra"],
+    "direccion": "Av. Carlos Izaguirre 945, Los Olivos",
+    "telefono": "01-422-0005"
+  }
+]

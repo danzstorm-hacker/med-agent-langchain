@@ -1,0 +1,42 @@
+[
+  {"id": "se-001", "sede_id": "sede-001", "especialidad_id": "esp-001"},
+  {"id": "se-002", "sede_id": "sede-001", "especialidad_id": "esp-002"},
+  {"id": "se-003", "sede_id": "sede-001", "especialidad_id": "esp-003"},
+  {"id": "se-004", "sede_id": "sede-001", "especialidad_id": "esp-005"},
+  {"id": "se-005", "sede_id": "sede-001", "especialidad_id": "esp-007"},
+  {"id": "se-006", "sede_id": "sede-001", "especialidad_id": "esp-008"},
+  {"id": "se-007", "sede_id": "sede-001", "especialidad_id": "esp-009"},
+  {"id": "se-008", "sede_id": "sede-001", "especialidad_id": "esp-010"},
+
+  {"id": "se-009", "sede_id": "sede-002", "especialidad_id": "esp-001"},
+  {"id": "se-010", "sede_id": "sede-002", "especialidad_id": "esp-002"},
+  {"id": "se-011", "sede_id": "sede-002", "especialidad_id": "esp-003"},
+  {"id": "se-012", "sede_id": "sede-002", "especialidad_id": "esp-004"},
+  {"id": "se-013", "sede_id": "sede-002", "especialidad_id": "esp-006"},
+  {"id": "se-014", "sede_id": "sede-002", "especialidad_id": "esp-007"},
+  {"id": "se-015", "sede_id": "sede-002", "especialidad_id": "esp-009"},
+
+  {"id": "se-016", "sede_id": "sede-003", "especialidad_id": "esp-001"},
+  {"id": "se-017", "sede_id": "sede-003", "especialidad_id": "esp-002"},
+  {"id": "se-018", "sede_id": "sede-003", "especialidad_id": "esp-004"},
+  {"id": "se-019", "sede_id": "sede-003", "especialidad_id": "esp-005"},
+  {"id": "se-020", "sede_id": "sede-003", "especialidad_id": "esp-006"},
+  {"id": "se-021", "sede_id": "sede-003", "especialidad_id": "esp-008"},
+  {"id": "se-022", "sede_id": "sede-003", "especialidad_id": "esp-010"},
+
+  {"id": "se-023", "sede_id": "sede-004", "especialidad_id": "esp-001"},
+  {"id": "se-024", "sede_id": "sede-004", "especialidad_id": "esp-003"},
+  {"id": "se-025", "sede_id": "sede-004", "especialidad_id": "esp-004"},
+  {"id": "se-026", "sede_id": "sede-004", "especialidad_id": "esp-005"},
+  {"id": "se-027", "sede_id": "sede-004", "especialidad_id": "esp-006"},
+  {"id": "se-028", "sede_id": "sede-004", "especialidad_id": "esp-007"},
+  {"id": "se-029", "sede_id": "sede-004", "especialidad_id": "esp-009"},
+
+  {"id": "se-030", "sede_id": "sede-005", "especialidad_id": "esp-001"},
+  {"id": "se-031", "sede_id": "sede-005", "especialidad_id": "esp-002"},
+  {"id": "se-032", "sede_id": "sede-005", "especialidad_id": "esp-004"},
+  {"id": "se-033", "sede_id": "sede-005", "especialidad_id": "esp-005"},
+  {"id": "se-034", "sede_id": "sede-005", "especialidad_id": "esp-006"},
+  {"id": "se-035", "sede_id": "sede-005", "especialidad_id": "esp-008"},
+  {"id": "se-036", "sede_id": "sede-005", "especialidad_id": "esp-010"}
+]

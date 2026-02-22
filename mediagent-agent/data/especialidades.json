@@ -1,0 +1,12 @@
+[
+  {"id": "esp-001", "nombre": "Medicina General"},
+  {"id": "esp-002", "nombre": "Cardiología"},
+  {"id": "esp-003", "nombre": "Dermatología"},
+  {"id": "esp-004", "nombre": "Traumatología"},
+  {"id": "esp-005", "nombre": "Ginecología"},
+  {"id": "esp-006", "nombre": "Pediatría"},
+  {"id": "esp-007", "nombre": "Oftalmología"},
+  {"id": "esp-008", "nombre": "Neurología"},
+  {"id": "esp-009", "nombre": "Gastroenterología"},
+  {"id": "esp-010", "nombre": "Endocrinología"}
+]

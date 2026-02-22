@@ -1,0 +1,47 @@
+[
+  {"id": "doc-001", "nombres": "Carlos Alberto", "apellidos": "Mendoza Ríos", "especialidad_id": "esp-001", "sede_id": "sede-001", "numero_colegiatura": "CMP-45201"},
+  {"id": "doc-002", "nombres": "María Elena", "apellidos": "Vargas Huamán", "especialidad_id": "esp-001", "sede_id": "sede-002", "numero_colegiatura": "CMP-45202"},
+  {"id": "doc-003", "nombres": "Jorge Luis", "apellidos": "Paredes Castro", "especialidad_id": "esp-001", "sede_id": "sede-003", "numero_colegiatura": "CMP-45203"},
+  {"id": "doc-004", "nombres": "Ana Lucía", "apellidos": "Torres Sánchez", "especialidad_id": "esp-001", "sede_id": "sede-004", "numero_colegiatura": "CMP-45204"},
+  {"id": "doc-005", "nombres": "Roberto", "apellidos": "Chávez Peña", "especialidad_id": "esp-001", "sede_id": "sede-005", "numero_colegiatura": "CMP-45205"},
+
+  {"id": "doc-006", "nombres": "Fernando", "apellidos": "Gutiérrez Lozano", "especialidad_id": "esp-002", "sede_id": "sede-001", "numero_colegiatura": "CMP-38101"},
+  {"id": "doc-007", "nombres": "Patricia", "apellidos": "Romero Díaz", "especialidad_id": "esp-002", "sede_id": "sede-002", "numero_colegiatura": "CMP-38102"},
+  {"id": "doc-008", "nombres": "Eduardo", "apellidos": "Silva Morales", "especialidad_id": "esp-002", "sede_id": "sede-003", "numero_colegiatura": "CMP-38103"},
+  {"id": "doc-009", "nombres": "Gabriela", "apellidos": "Herrera Vásquez", "especialidad_id": "esp-002", "sede_id": "sede-005", "numero_colegiatura": "CMP-38104"},
+
+  {"id": "doc-010", "nombres": "Lucía", "apellidos": "Fernández Roca", "especialidad_id": "esp-003", "sede_id": "sede-001", "numero_colegiatura": "CMP-41301"},
+  {"id": "doc-011", "nombres": "Diego", "apellidos": "Quispe Mamani", "especialidad_id": "esp-003", "sede_id": "sede-002", "numero_colegiatura": "CMP-41302"},
+  {"id": "doc-012", "nombres": "Valentina", "apellidos": "Córdova Luna", "especialidad_id": "esp-003", "sede_id": "sede-004", "numero_colegiatura": "CMP-41303"},
+
+  {"id": "doc-013", "nombres": "Andrés", "apellidos": "Delgado Flores", "especialidad_id": "esp-004", "sede_id": "sede-002", "numero_colegiatura": "CMP-39401"},
+  {"id": "doc-014", "nombres": "Carla", "apellidos": "Bustamante Ortiz", "especialidad_id": "esp-004", "sede_id": "sede-003", "numero_colegiatura": "CMP-39402"},
+  {"id": "doc-015", "nombres": "Miguel Ángel", "apellidos": "Rojas Espinoza", "especialidad_id": "esp-004", "sede_id": "sede-004", "numero_colegiatura": "CMP-39403"},
+  {"id": "doc-016", "nombres": "Sandra", "apellidos": "Huanca Condori", "especialidad_id": "esp-004", "sede_id": "sede-005", "numero_colegiatura": "CMP-39404"},
+
+  {"id": "doc-017", "nombres": "Rosa María", "apellidos": "Alvarado Peña", "especialidad_id": "esp-005", "sede_id": "sede-001", "numero_colegiatura": "CMP-42501"},
+  {"id": "doc-018", "nombres": "Claudia", "apellidos": "Medina Zarate", "especialidad_id": "esp-005", "sede_id": "sede-003", "numero_colegiatura": "CMP-42502"},
+  {"id": "doc-019", "nombres": "Silvia", "apellidos": "Palacios Rivera", "especialidad_id": "esp-005", "sede_id": "sede-004", "numero_colegiatura": "CMP-42503"},
+  {"id": "doc-020", "nombres": "Beatriz", "apellidos": "Cárdenas Solís", "especialidad_id": "esp-005", "sede_id": "sede-005", "numero_colegiatura": "CMP-42504"},
+
+  {"id": "doc-021", "nombres": "Juan Carlos", "apellidos": "Montalvo Ruiz", "especialidad_id": "esp-006", "sede_id": "sede-002", "numero_colegiatura": "CMP-44601"},
+  {"id": "doc-022", "nombres": "Isabel", "apellidos": "Contreras Vega", "especialidad_id": "esp-006", "sede_id": "sede-003", "numero_colegiatura": "CMP-44602"},
+  {"id": "doc-023", "nombres": "Héctor", "apellidos": "Navarro Inga", "especialidad_id": "esp-006", "sede_id": "sede-004", "numero_colegiatura": "CMP-44603"},
+  {"id": "doc-024", "nombres": "Lorena", "apellidos": "Castillo Mejía", "especialidad_id": "esp-006", "sede_id": "sede-005", "numero_colegiatura": "CMP-44604"},
+
+  {"id": "doc-025", "nombres": "Ricardo", "apellidos": "Ochoa Tapia", "especialidad_id": "esp-007", "sede_id": "sede-001", "numero_colegiatura": "CMP-40701"},
+  {"id": "doc-026", "nombres": "Mónica", "apellidos": "Salazar Blanco", "especialidad_id": "esp-007", "sede_id": "sede-002", "numero_colegiatura": "CMP-40702"},
+  {"id": "doc-027", "nombres": "Arturo", "apellidos": "Villanueva Cruz", "especialidad_id": "esp-007", "sede_id": "sede-004", "numero_colegiatura": "CMP-40703"},
+
+  {"id": "doc-028", "nombres": "Diana", "apellidos": "Espinoza Calle", "especialidad_id": "esp-008", "sede_id": "sede-001", "numero_colegiatura": "CMP-37801"},
+  {"id": "doc-029", "nombres": "Raúl", "apellidos": "Figueroa Arias", "especialidad_id": "esp-008", "sede_id": "sede-003", "numero_colegiatura": "CMP-37802"},
+  {"id": "doc-030", "nombres": "Verónica", "apellidos": "Paz Gonzales", "especialidad_id": "esp-008", "sede_id": "sede-005", "numero_colegiatura": "CMP-37803"},
+
+  {"id": "doc-031", "nombres": "Julio César", "apellidos": "Benítez Torres", "especialidad_id": "esp-009", "sede_id": "sede-001", "numero_colegiatura": "CMP-43901"},
+  {"id": "doc-032", "nombres": "Martha", "apellidos": "Aguilar Soto", "especialidad_id": "esp-009", "sede_id": "sede-002", "numero_colegiatura": "CMP-43902"},
+  {"id": "doc-033", "nombres": "Enrique", "apellidos": "Zamora León", "especialidad_id": "esp-009", "sede_id": "sede-004", "numero_colegiatura": "CMP-43903"},
+
+  {"id": "doc-034", "nombres": "Laura", "apellidos": "Reyes Acosta", "especialidad_id": "esp-010", "sede_id": "sede-001", "numero_colegiatura": "CMP-36001"},
+  {"id": "doc-035", "nombres": "Óscar", "apellidos": "Lara Jiménez", "especialidad_id": "esp-010", "sede_id": "sede-003", "numero_colegiatura": "CMP-36002"},
+  {"id": "doc-036", "nombres": "Pilar", "apellidos": "Cueva Ramírez", "especialidad_id": "esp-010", "sede_id": "sede-005", "numero_colegiatura": "CMP-36003"}
+]
